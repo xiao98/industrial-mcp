@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/assets/logo.png" alt="Industrial MCP" width="200"/>
-</p>
+
 
 <h1 align="center">🏭 Industrial MCP</h1>
 
