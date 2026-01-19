@@ -99,24 +99,22 @@ class MCPServer:
                 "protocol_version": "2024-11-05"
             }
         
-        @self._app.get("/tools")
+        @self._app.get("/mcp/tools")
         async def list_tools():
             """List all available tools."""
-            return {
-                "tools": [
-                    {
-                        "name": defn.name,
-                        "description": defn.description,
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": defn.parameters
-                        }
+            return [
+                {
+                    "name": defn.name,
+                    "description": defn.description,
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": defn.parameters
                     }
-                    for defn in self._tool_definitions.values()
-                ]
-            }
+                }
+                for defn in self._tool_definitions.values()
+            ]
         
-        @self._app.post("/tools/call")
+        @self._app.post("/mcp/tools/call")
         async def call_tool(request: ToolCallRequest):
             """Call a specific tool."""
             if request.name not in self._tools:
@@ -135,14 +133,33 @@ class MCPServer:
                 logger.error("Tool execution failed", tool=request.name, error=str(e))
                 return ToolCallResponse(success=False, error=str(e))
         
-        @self._app.get("/resources")
+        @self._app.post("/mcp/tools/{tool_name}/call")
+        async def call_tool_by_name(tool_name: str, arguments: Dict[str, Any] = {}):
+            """Call a specific tool by name in URL."""
+            if tool_name not in self._tools:
+                raise HTTPException(404, f"Tool '{tool_name}' not found")
+            
+            try:
+                tool_func = self._tools[tool_name]
+                if asyncio.iscoroutinefunction(tool_func):
+                    result = await tool_func(**arguments)
+                else:
+                    result = tool_func(**arguments)
+                    
+                return result
+                
+            except Exception as e:
+                logger.error("Tool execution failed", tool=tool_name, error=str(e))
+                raise HTTPException(500, str(e))
+        
+        @self._app.get("/mcp/resources")
         async def list_resources():
             """List all available resources."""
             return {
                 "resources": list(self._resources.values())
             }
         
-        @self._app.get("/resources/{uri:path}")
+        @self._app.get("/mcp/resources/{uri:path}")
         async def read_resource(uri: str):
             """Read a specific resource."""
             if uri not in self._resources:
