@@ -1,0 +1,133 @@
+# =============================================================================
+# Industrial MCP Docker Compose Configuration
+# =============================================================================
+#
+# Usage:
+#   docker-compose up              # Start in production mode
+#   docker-compose up -d           # Start in background
+#   docker-compose --profile dev up  # Start with development tools
+#   docker-compose logs -f         # View logs
+#   docker-compose down            # Stop all services
+#
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Industrial MCP Server
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: industrial-mcp
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-8080}:8080"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      # Mount config file (optional)
+      - ./config.yaml:/app/config.yaml:ro
+      # Mount logs directory
+      - mcp-logs:/app/logs
+    networks:
+      - mcp-network
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/', timeout=5)" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # MQTT Broker (for IoT sensor integration)
+  # ---------------------------------------------------------------------------
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mqtt-data:/mosquitto/data
+      - mqtt-logs:/mosquitto/log
+    networks:
+      - mcp-network
+    profiles:
+      - full
+
+  # ---------------------------------------------------------------------------
+  # Modbus Simulator (for testing without real hardware)
+  # ---------------------------------------------------------------------------
+  modbus-simulator:
+    image: oitc/modbus-server:latest
+    container_name: modbus-simulator
+    restart: unless-stopped
+    ports:
+      - "5020:5020"
+    networks:
+      - mcp-network
+    profiles:
+      - dev
+      - full
+
+  # ---------------------------------------------------------------------------
+  # Prometheus (metrics collection)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - mcp-network
+    profiles:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Grafana (dashboards)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - mcp-network
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  mcp-network:
+    driver: bridge
+
+# -----------------------------------------------------------------------------
+# Volumes
+# -----------------------------------------------------------------------------
+volumes:
+  mcp-logs:
+  mqtt-data:
+  mqtt-logs:
+  prometheus-data:
+  grafana-data:
